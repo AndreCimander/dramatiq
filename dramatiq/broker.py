@@ -84,17 +84,10 @@ class Broker:
         for m in middleware:
             self.add_middleware(m)
 
-    def _build_optimized_middleware_list(self, signal: str):
-        self.middleware_by_signal[signal] = [
-            getattr(middleware, signal)
-            for middleware in self.middleware
-            if callable(getattr(middleware, signal, False)) and not hasattr(getattr(middleware, signal), "noop")
-        ]
-
     def emit_before(self, signal: str, *args, **kwargs):
         signal = "before_" + signal
         if signal not in self.middleware_by_signal:
-            self._build_optimized_middleware_list(signal)
+            self._build_optimized_middleware_callable(signal)
 
         # execute optimized list
         for middleware_handler in self.middleware_by_signal[signal]:
@@ -108,7 +101,7 @@ class Broker:
     def emit_after(self, signal: str, *args, **kwargs):
         signal = "after_" + signal
         if signal not in self.middleware_by_signal:
-            self._build_optimized_middleware_list(signal)
+            self._build_optimized_middleware_callable(signal)
 
         # execute reversed optimized list
         for middleware_handler in reversed(self.middleware_by_signal[signal]):
@@ -116,6 +109,14 @@ class Broker:
                 middleware_handler(self, *args, **kwargs)
             except Exception:
                 self.logger.critical("Unexpected failure in %s.", signal, exc_info=True)
+
+    def _build_optimized_middleware_callable(self, signal: str):
+        self.middleware_by_signal[signal] = [
+            getattr(middleware, signal)
+            for middleware in self.middleware
+            # don't add no-op base middleware methods
+            if getattr(middleware, signal).__qualname__[0:11] != 'Middleware.'
+        ]
 
     def add_middleware(self, middleware, *, before=None, after=None):
         """Add a middleware object to this broker.  The middleware is
